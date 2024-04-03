@@ -35,3 +35,4 @@ Releases & Compatibility
 |-----------------|------------------|-----------------------------------------------------------------------|
 | 1.1.x           | >= 8.3 < 9       |                                                                       |
 | 2.0.x           | >= 8.3 < 9       | completely reworked structure compatible with formatd/hotspot-content |
+| 2.1.x           | >= 9       		 | Neos 9 compatibility and code changes                                 |
