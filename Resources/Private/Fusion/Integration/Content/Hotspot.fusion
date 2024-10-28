@@ -2,11 +2,11 @@ prototype(FormatD.HotspotEditor:Content.Hotspot) < prototype(Neos.Neos:ContentCo
 
 	renderer = FormatD.HotspotEditor:Atom.Hotspot {
 
-		hoverTitle = ${q(node).property('hoverTitle')}
-		identifier = ${String.md5(q(node).property('_identifier'))}
+		hoverTitle = ${node.properties.hoverTitle}
+		identifier = ${String.md5(node.aggregateId)}
 
-		xPosition = ${q(node).property('xPosition')}
-		yPosition = ${q(node).property('yPosition')}
+		xPosition = ${node.properties.xPosition}
+		yPosition = ${node.properties.yPosition}
 
 		uri = Neos.Fusion:Case {
 			hasLink {
@@ -20,7 +20,5 @@ prototype(FormatD.HotspotEditor:Content.Hotspot) < prototype(Neos.Neos:ContentCo
 				renderer = ''
 			}
 		}
-
 	}
-
 }
