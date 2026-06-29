@@ -1,53 +1,101 @@
 import { IVector2D } from '../Interfaces/IVector2D';
 
+interface NodeSelectedDetail {
+	node?: { nodeTypeName?: string; nodeType?: string };
+	element?: HTMLElement;
+}
+
+interface HotspotValueChangeDetail {
+	coordinateId: string;
+	coordinateValue: number;
+}
+
+/**
+ * Handles dragging of hotspots within a single content element (the domSection passed to the
+ * constructor). The persistent document/window listeners are shared across all instances, so a
+ * page with multiple ContentWithHotspots elements only registers them once and routes events to
+ * the instance that owns the selected hotspot.
+ */
 export default class Hotspots {
+	private static instances: Set<Hotspots> = new Set();
+	private static sharedListenersAttached: boolean = false;
+	private static nodeSelectedListener: EventListener;
+	private static hotspotValueChangeListener: EventListener;
+
 	private editable: boolean = true;
-	private debug: boolean;
-	private selectedElement: HTMLElement
+	private selectedElement: HTMLElement | null = null;
 	private readonly domSection: HTMLElement;
 	private readonly hotspotNodeTypes: string[];
-	private activeMouseDownListener: EventListener;
-	private activeMouseMoveListener: EventListener;
-	private activeMouseUpListener: EventListener;
+	private activeMouseDownListener!: EventListener;
+	private activeMouseMoveListener!: EventListener;
+	private activeMouseUpListener!: EventListener;
 
 	constructor(domSection: HTMLElement, hotspotNodeTypes: string[] = ['FormatD.HotspotEditor:Content.Hotspot']) {
 		this.domSection = domSection;
-		this.hotspotNodeTypes = hotspotNodeTypes ;
+		this.hotspotNodeTypes = hotspotNodeTypes;
 
-		// only initialize in backend
-		if (document.querySelector('body').classList.contains('neos-backend')) {
-			this.initialize();
+		if (document.querySelector('body')?.classList.contains('neos-backend')) {
+			Hotspots.register(this);
 		}
 	}
 
-	private setEditable(editable: boolean): void {
+	public setEditable(editable: boolean): void {
 		if (!editable && this.selectedElement) {
-			this.selectedElement.removeEventListener('mousedown', this.activeMouseDownListener);
-			this.selectedElement.removeEventListener('mouseup', this.activeMouseUpListener);
-			this.selectedElement.removeEventListener('mousemove', this.activeMouseMoveListener);
+			this._detachDragListeners();
 			this.selectedElement = null;
 		}
 
 		this.editable = editable;
 	}
 
-	private initialize(): void {
-		window.parent.addEventListener('fd-hotspot-editor:hotspotInspectorValueChanged', (event: CustomEvent) => {
-			this._hotspotValueChangeHandler(event);
-		});
-
-		document.addEventListener('Neos.NodeSelected', (event: CustomEvent) => {
-			this.nodeSelectHandler(event);
-		}, false);
+	public dispose(): void {
+		this._detachDragListeners();
+		this.selectedElement = null;
+		Hotspots.unregister(this);
 	}
 
-	private _hotspotValueChangeHandler(event: CustomEvent): void {
-		const coordinateId: string = event.detail.coordinateId;
+	private static register(instance: Hotspots): void {
+		Hotspots.instances.add(instance);
+		if (!Hotspots.sharedListenersAttached) {
+			Hotspots._attachSharedListeners();
+		}
+	}
+
+	private static unregister(instance: Hotspots): void {
+		Hotspots.instances.delete(instance);
+		if (Hotspots.instances.size === 0) {
+			Hotspots._detachSharedListeners();
+		}
+	}
+
+	private static _attachSharedListeners(): void {
+		Hotspots.nodeSelectedListener = (event: Event) => {
+			const detail = (event as CustomEvent).detail as NodeSelectedDetail;
+			Hotspots.instances.forEach((instance) => instance._handleNodeSelected(detail));
+		};
+		Hotspots.hotspotValueChangeListener = (event: Event) => {
+			const detail = (event as CustomEvent).detail as HotspotValueChangeDetail;
+			Hotspots.instances.forEach((instance) => instance._handleValueChange(detail));
+		};
+
+		document.addEventListener('Neos.NodeSelected', Hotspots.nodeSelectedListener, false);
+		window.parent.addEventListener('fd-hotspot-editor:hotspotInspectorValueChanged', Hotspots.hotspotValueChangeListener);
+		Hotspots.sharedListenersAttached = true;
+	}
+
+	private static _detachSharedListeners(): void {
+		document.removeEventListener('Neos.NodeSelected', Hotspots.nodeSelectedListener);
+		window.parent.removeEventListener('fd-hotspot-editor:hotspotInspectorValueChanged', Hotspots.hotspotValueChangeListener);
+		Hotspots.sharedListenersAttached = false;
+	}
+
+	private _handleValueChange(detail: HotspotValueChangeDetail): void {
+		const coordinateId = detail.coordinateId;
 		if ((!coordinateId.includes('x') && !coordinateId.includes('y')) || !this.selectedElement) {
 			return;
 		}
 
-		const coordinateValue: number = event.detail.coordinateValue;
+		const coordinateValue = detail.coordinateValue;
 		if (coordinateId.includes('x')) {
 			this._moveElement(this.selectedElement, coordinateValue, undefined);
 		}
@@ -56,86 +104,100 @@ export default class Hotspots {
 		}
 	}
 
-	private nodeSelectHandler(event: CustomEvent): void {
-		const detail = event.detail;
+	private _handleNodeSelected(detail: NodeSelectedDetail): void {
+		const nodeTypeName = detail.node?.nodeTypeName || detail.node?.nodeType;
+		const element = detail.element;
+		const belongsToThisArea = !!nodeTypeName
+			&& this.hotspotNodeTypes.includes(nodeTypeName)
+			&& !!element
+			&& this.domSection.contains(element);
 
-		// event.detail === 1 >> only fire on single click
-		if (this.hotspotNodeTypes.includes(event.detail.node.nodeType) && this.editable) {
-			this.selectedElement = (detail.element as HTMLElement);
-			const containerElement = this.selectedElement.parentElement.parentElement;
+		if (belongsToThisArea && this.editable) {
+			this._selectHotspot(element as HTMLElement);
+		} else if (this.selectedElement) {
+			this._detachDragListeners();
+			this.selectedElement = null;
+		}
+	}
 
-			const currentOffsetTop = event.detail.element.offsetTop;
-			const currentOffsetLeft = event.detail.element.offsetLeft;
+	private _selectHotspot(element: HTMLElement): void {
+		this.selectedElement = element;
 
-			let initialPosition: IVector2D = {x: 0, y: 0};
-			let offsetPosition: IVector2D = {x: 0, y: 0};
-			let currentPosition: IVector2D = {x: 0, y: 0};
+		const initialPosition: IVector2D = {
+			x: element.offsetLeft,
+			y: element.offsetTop
+		};
+		const offsetPosition: IVector2D = { x: 0, y: 0 };
+		const currentPosition: IVector2D = { x: 0, y: 0 };
 
-			if (currentOffsetTop !== undefined && currentOffsetLeft !== undefined) {
-				initialPosition.x = currentOffsetLeft;
-				initialPosition.y = currentOffsetTop;
-			}
+		this.activeMouseUpListener = (mouseEvent: Event) => {
+			const mEvent = mouseEvent as MouseEvent;
+			mEvent.preventDefault();
 
-			this.activeMouseUpListener = (mouseEvent: MouseEvent) => {
-				mouseEvent.preventDefault();
+			const container = mEvent.composedPath().find((node) =>
+				node instanceof HTMLElement && node.className === 'content-with-hotspots--container'
+			) as HTMLElement | undefined;
 
-				const containerElement = mouseEvent.composedPath().find((element: HTMLElement) => {
-					return element.className === 'content-with-hotspots--container';
-				});
-
+			if (container) {
 				this._dispatchHotspotDraggedEvent({
 					x: currentPosition.x + offsetPosition.x,
 					y: currentPosition.y + offsetPosition.y
-				}, containerElement as HTMLElement);
+				}, container);
+			}
 
-				initialPosition.x = currentPosition.x;
-				initialPosition.y = currentPosition.y;
+			initialPosition.x = currentPosition.x;
+			initialPosition.y = currentPosition.y;
 
-				containerElement.removeEventListener('mouseup', this.activeMouseUpListener);
-				containerElement.removeEventListener('mousemove', this.activeMouseMoveListener);
-				if (this.selectedElement) {
-					this.selectedElement.removeEventListener('mousedown', this.activeMouseDownListener);
-				}
-			};
+			document.removeEventListener('mouseup', this.activeMouseUpListener);
+			document.removeEventListener('mousemove', this.activeMouseMoveListener);
+			element.removeEventListener('mousedown', this.activeMouseDownListener);
+		};
 
-			this.activeMouseDownListener = (mouseEvent: MouseEvent) => {
-				mouseEvent.preventDefault();
+		this.activeMouseDownListener = (mouseEvent: Event) => {
+			const mEvent = mouseEvent as MouseEvent;
+			mEvent.preventDefault();
 
-				containerElement.addEventListener('mouseup', this.activeMouseUpListener);
-				containerElement.addEventListener('mousemove', this.activeMouseMoveListener);
+			document.addEventListener('mouseup', this.activeMouseUpListener);
+			document.addEventListener('mousemove', this.activeMouseMoveListener);
 
-				initialPosition.x = mouseEvent.clientX - offsetPosition.x;
-				initialPosition.y = mouseEvent.clientY - offsetPosition.y;
+			initialPosition.x = mEvent.clientX - offsetPosition.x;
+			initialPosition.y = mEvent.clientY - offsetPosition.y;
 
-				offsetPosition.x = this.selectedElement.getBoundingClientRect().left
-					- this.selectedElement.parentElement.parentElement.getBoundingClientRect().left;
-				offsetPosition.y = this.selectedElement.getBoundingClientRect().top
-					- this.selectedElement.parentElement.parentElement.getBoundingClientRect().top;
-			};
+			const container = element.parentElement?.parentElement;
+			if (container) {
+				offsetPosition.x = element.getBoundingClientRect().left - container.getBoundingClientRect().left;
+				offsetPosition.y = element.getBoundingClientRect().top - container.getBoundingClientRect().top;
+			}
+		};
 
-			this.activeMouseMoveListener = (mouseEvent: MouseEvent) => {
-				mouseEvent.preventDefault();
-				mouseEvent.stopPropagation();
+		this.activeMouseMoveListener = (mouseEvent: Event) => {
+			const mEvent = mouseEvent as MouseEvent;
+			mEvent.preventDefault();
+			mEvent.stopPropagation();
 
-				currentPosition.x = mouseEvent.clientX - initialPosition.x;
-				currentPosition.y = mouseEvent.clientY - initialPosition.y;
+			currentPosition.x = mEvent.clientX - initialPosition.x;
+			currentPosition.y = mEvent.clientY - initialPosition.y;
 
-				this._moveElement(this.selectedElement, (currentPosition.x + offsetPosition.x), (currentPosition.y + offsetPosition.y), 'px');
-			};
+			this._moveElement(element, currentPosition.x + offsetPosition.x, currentPosition.y + offsetPosition.y, 'px');
+		};
 
-			this.selectedElement.addEventListener('mousedown', this.activeMouseDownListener);
-		} else if (this.selectedElement) {
+		element.addEventListener('mousedown', this.activeMouseDownListener);
+	}
+
+	private _detachDragListeners(): void {
+		document.removeEventListener('mouseup', this.activeMouseUpListener);
+		document.removeEventListener('mousemove', this.activeMouseMoveListener);
+		if (this.selectedElement) {
 			this.selectedElement.removeEventListener('mousedown', this.activeMouseDownListener);
-			this.selectedElement.removeEventListener('mousedown', this.activeMouseUpListener);
-			this.selectedElement.removeEventListener('mousedown', this.activeMouseMoveListener);
-			this.selectedElement = null;
+			this.selectedElement.removeEventListener('mouseup', this.activeMouseUpListener);
+			this.selectedElement.removeEventListener('mousemove', this.activeMouseMoveListener);
 		}
 	}
 
 	private _dispatchHotspotDraggedEvent(position: IVector2D, parentElement?: HTMLElement) {
 		if (parentElement) {
-			position.x = position.x / parentElement.offsetWidth * 100;
-			position.y = position.y / parentElement.offsetHeight * 100;
+			position.x = (position.x / parentElement.offsetWidth) * 100;
+			position.y = (position.y / parentElement.offsetHeight) * 100;
 		}
 
 		const dragEvent: CustomEvent = new CustomEvent(
@@ -157,20 +219,11 @@ export default class Hotspots {
 	private _moveElement(element: HTMLElement, x?: number, y?: number, unit?: 'px' | '%') {
 		unit = unit || '%';
 
-		if (x) {
+		if (x !== undefined) {
 			element.style.left = String(x) + unit;
 		}
-		if (y) {
+		if (y !== undefined) {
 			element.style.top = String(y) + unit;
-		}
-	}
-
-	/**
-	 * Logs all provided arguments if debug is true
-	 */
-	private log() {
-		if (this.debug) {
-			console.log(...arguments);
 		}
 	}
 }

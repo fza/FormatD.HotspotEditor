@@ -1,5 +1,0 @@
-
-'Neos.Neos:ContentCollection':
-  constraints:
-    nodeTypes:
-      'FormatD.HotspotEditor:Content.Hotspot': false

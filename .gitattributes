@@ -1,0 +1,7 @@
+# Keep the composer dist lean: ship the pre-built Plugin.js in Resources/Public,
+# but exclude the Node build tooling and editor/dev files.
+/Resources/Private/Scripts export-ignore
+/.idea                     export-ignore
+/.editorconfig             export-ignore
+/.gitignore                export-ignore
+/.gitattributes            export-ignore
