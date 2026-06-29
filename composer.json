@@ -6,6 +6,9 @@
   "require": {
     "neos/neos-ui": "~9.0"
   },
+  "suggest": {
+    "formatd/hotspot-content": "Default implementation package providing the ImageWithHotspots content element"
+  },
   "extra": {
     "neos": {
       "package-key": "FormatD.HotspotEditor"

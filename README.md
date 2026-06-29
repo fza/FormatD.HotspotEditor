@@ -1,8 +1,7 @@
 # FormatD.HotspotEditor
 
 Provides a backend editor for Neos and some base Fusion prototypes for drag-and-drop hotspots on any
-content.
-This package is meant as a base for concrete implementations of content elements.
+content. This package is meant as a base for concrete implementations of content elements.
 
 
 ## Installation
@@ -13,13 +12,6 @@ implementation of an `Image with Hotspots` content element.
 
 ```bash
 composer require formatd/hotspot-content
-```
-
-
-## Compile Backend Editor
-
-```bash
-cd Resources/Private/Scripts/HotspotEditor && npm install && npm run build
 ```
 
 
@@ -42,3 +34,19 @@ Releases & Compatibility
 | 3.0.x           | >= 9.0           | Neos 9 compatibility                                                  |
 
 See [CHANGELOG.md](CHANGELOG.md) for breaking changes and upgrade notes.
+
+
+## Contribution
+
+Please maintain a clean and consistent coding style.
+
+To rebuild the assets (Node >= 24), run:
+
+```bash
+cd Resources/Private/Scripts/HotspotEditor && npm install && npm run build
+```
+
+
+## License
+
+See [LICENSE](LICENSE) (MIT)
