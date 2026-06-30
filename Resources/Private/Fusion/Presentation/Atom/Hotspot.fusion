@@ -2,6 +2,7 @@ prototype(FormatD.HotspotEditor:Atom.Hotspot) < prototype(Neos.Fusion:Component)
 
 	@styleguide {
 		title = 'Hotspot'
+		ariaLabel = 'Test-Hotspot'
 		description = 'This is a hotspot item'
 		props {
             hoverTitle = 'Hover title'
@@ -19,6 +20,7 @@ prototype(FormatD.HotspotEditor:Atom.Hotspot) < prototype(Neos.Fusion:Component)
 	@propTypes {
 		@strict = false
         hoverTitle = ${PropTypes.string}
+		ariaLabel = ${PropTypes.string}
 		xPosition = ${PropTypes.float}
 		yPosition = ${PropTypes.float}
 		identifier = ${PropTypes.string}
@@ -27,6 +29,7 @@ prototype(FormatD.HotspotEditor:Atom.Hotspot) < prototype(Neos.Fusion:Component)
 	}
 
     hoverTitle = ''
+	ariaLabel = ''
 	xPosition = 50.0
 	yPosition = 50.0
 	uri = ''
@@ -47,7 +50,7 @@ prototype(FormatD.HotspotEditor:Atom.Hotspot) < prototype(Neos.Fusion:Component)
 				attributes.href={!props.inBackend && props.uri ? props.uri : null}
 				attributes.type={!props.uri ? 'button' : null}
 				attributes.aria-controls={!props.uri ? props.identifier : null}
-				attributes.aria-label={props.hoverTitle ? props.hoverTitle : 'Hotspot'}
+				attributes.aria-label={props.ariaLabel ? props.ariaLabel : props.hoverTitle}
 				attributes.data-hotspot-posx={props.xPosition}
 				attributes.data-hotspot-posy={props.yPosition}
 				attributes.data-hotspot-id={props.identifier}
