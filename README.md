@@ -43,7 +43,11 @@ Please maintain a clean and consistent coding style.
 To rebuild the assets (Node >= 24), run:
 
 ```bash
-cd Resources/Private/Scripts/HotspotEditor && npm install && npm run build
+cd Resources/Private/Scripts/HotspotEditor
+npm install
+npm run build
+# or:
+npm run watch
 ```
 
 

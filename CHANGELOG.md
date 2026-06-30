@@ -5,10 +5,22 @@
 
 Neos 9 compatibility. **Breaking.**
 
-- Backend detection now uses `renderingMode` instead of the removed `documentNode.context.inBackend`
-  → requires Neos CMS >= 9.0 (`neos/neos-ui: ~9.0`).
-- Switched the backend-editor build from `neos-react-scripts` (webpack) to esbuild. The pre-built
-  `Resources/Public/HotspotEditor/Plugin.js` is shipped, so no build step is needed on install.
+**Breaking changes:**
+
+- New `NodeTypes/Overrides.yaml` globally disables `Content.Hotspot` from generic
+  `Neos.Neos:ContentCollection` slots — accidental placement is now prevented at the node type
+  level.
+
+**New:**
+
+- `Molecule.ContentWithHotspots`: new `hotspotNodeTypes` prop, rendered as
+  `data-hotspot-node-types` in edit mode so the JS layer knows which node types to watch.
+  Useful for custom Hotspot node type implementations.
+- `Hotspots` JS class: `onExternalNodeSelected` public callback fires when a node is selected
+  (passes the element or `undefined`).
+- `has-selected-pin` CSS class added to the container `domSection` when a hotspot is selected —
+  useful for custom styling.
+- German translations for all hotspot node type properties.
 
 **Upgrade:** require `>= 9.0`. If you override `Atom.Hotspot`, replace any `*.context.inBackend`
 with `renderingMode.isEdit` / `renderingMode.isPreview`.

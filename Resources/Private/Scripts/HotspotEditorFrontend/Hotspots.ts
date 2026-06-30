@@ -10,46 +10,42 @@ interface HotspotValueChangeDetail {
 	coordinateValue: number;
 }
 
-/**
- * Handles dragging of hotspots within a single content element (the domSection passed to the
- * constructor). The persistent document/window listeners are shared across all instances, so a
- * page with multiple ContentWithHotspots elements only registers them once and routes events to
- * the instance that owns the selected hotspot.
- */
 export default class Hotspots {
 	private static instances: Set<Hotspots> = new Set();
 	private static sharedListenersAttached: boolean = false;
 	private static nodeSelectedListener: EventListener;
 	private static hotspotValueChangeListener: EventListener;
 
+	public onExternalNodeSelected: ((element: HTMLElement | undefined) => void) | null = null;
+
 	private editable: boolean = true;
 	private selectedElement: HTMLElement | null = null;
 	private readonly domSection: HTMLElement;
 	private readonly hotspotNodeTypes: string[];
-	private activeMouseDownListener!: EventListener;
-	private activeMouseMoveListener!: EventListener;
-	private activeMouseUpListener!: EventListener;
+	private containerMousedownHandler!: EventListener;
+	private cancelActiveDrag: (() => void) | null = null;
 
 	constructor(domSection: HTMLElement, hotspotNodeTypes: string[] = ['FormatD.HotspotEditor:Content.Hotspot']) {
 		this.domSection = domSection;
 		this.hotspotNodeTypes = hotspotNodeTypes;
 
-		if (document.querySelector('body')?.classList.contains('neos-backend')) {
+		if (document.body.classList.contains('neos-backend')) {
 			Hotspots.register(this);
+			this._initBackendDrag();
 		}
 	}
 
 	public setEditable(editable: boolean): void {
-		if (!editable && this.selectedElement) {
-			this._detachDragListeners();
+		this.editable = editable;
+		if (!editable) {
+			this.cancelActiveDrag?.();
 			this.selectedElement = null;
 		}
-
-		this.editable = editable;
 	}
 
 	public dispose(): void {
-		this._detachDragListeners();
+		this.cancelActiveDrag?.();
+		this.domSection.removeEventListener('mousedown', this.containerMousedownHandler);
 		this.selectedElement = null;
 		Hotspots.unregister(this);
 	}
@@ -90,12 +86,8 @@ export default class Hotspots {
 	}
 
 	private _handleValueChange(detail: HotspotValueChangeDetail): void {
-		const coordinateId = detail.coordinateId;
-		if ((!coordinateId.includes('x') && !coordinateId.includes('y')) || !this.selectedElement) {
-			return;
-		}
-
-		const coordinateValue = detail.coordinateValue;
+		if (!this.selectedElement) return;
+		const { coordinateId, coordinateValue } = detail;
 		if (coordinateId.includes('x')) {
 			this._moveElement(this.selectedElement, coordinateValue, undefined);
 		}
@@ -107,100 +99,150 @@ export default class Hotspots {
 	private _handleNodeSelected(detail: NodeSelectedDetail): void {
 		const nodeTypeName = detail.node?.nodeTypeName || detail.node?.nodeType;
 		const element = detail.element;
+		const elementInArea = !!element && this.domSection.contains(element);
 		const belongsToThisArea = !!nodeTypeName
 			&& this.hotspotNodeTypes.includes(nodeTypeName)
-			&& !!element
-			&& this.domSection.contains(element);
+			&& elementInArea;
 
 		if (belongsToThisArea && this.editable) {
-			this._selectHotspot(element as HTMLElement);
-		} else if (this.selectedElement) {
-			this._detachDragListeners();
+			this.selectedElement = element as HTMLElement;
+			this.domSection.classList.add('has-selected-pin');
+		} else {
 			this.selectedElement = null;
+			this.domSection.classList.remove('has-selected-pin');
 		}
+
+		this.onExternalNodeSelected?.(element);
 	}
 
-	private _selectHotspot(element: HTMLElement): void {
-		this.selectedElement = element;
+	private _initBackendDrag(): void {
+		const neosWrapper = this.domSection.closest<HTMLElement>('[data-__neos-node-contextpath]');
+		if (neosWrapper) {
+			neosWrapper.classList.add('neos-hotspot-drag-area');
+		}
 
-		const initialPosition: IVector2D = {
-			x: element.offsetLeft,
-			y: element.offsetTop
-		};
 		const offsetPosition: IVector2D = { x: 0, y: 0 };
 		const currentPosition: IVector2D = { x: 0, y: 0 };
+		const lastClampedPosition: IVector2D = { x: 0, y: 0 };
+		let initialPosition: IVector2D = { x: 0, y: 0 };
+		let dragElement: HTMLElement | null = null;
 
-		this.activeMouseUpListener = (mouseEvent: Event) => {
-			const mEvent = mouseEvent as MouseEvent;
-			mEvent.preventDefault();
+		const endDrag = () => {
+			document.removeEventListener('mouseup', mouseUpHandler, true);
+			document.removeEventListener('mousemove', mouseMoveHandler);
+			this.cancelActiveDrag = null;
+		};
 
-			const container = mEvent.composedPath().find((node) =>
-				node instanceof HTMLElement && node.className === 'content-with-hotspots--container'
-			) as HTMLElement | undefined;
+		const removeDragOverlay = () => {
+			document.getElementById('neos-hotspot-drag-overlay')?.remove();
+		};
 
+		const mouseUpHandler = (event: MouseEvent) => {
+			event.preventDefault();
+			const el = dragElement;
+			endDrag();
+			dragElement = null;
+
+			if (!el) return;
+
+			const container = el.closest('.content-with-hotspots--container') as HTMLElement | null;
 			if (container) {
-				this._dispatchHotspotDraggedEvent({
-					x: currentPosition.x + offsetPosition.x,
-					y: currentPosition.y + offsetPosition.y
-				}, container);
+				this._dispatchHotspotDraggedEvent({ x: lastClampedPosition.x, y: lastClampedPosition.y }, container);
 			}
 
-			initialPosition.x = currentPosition.x;
-			initialPosition.y = currentPosition.y;
-
-			document.removeEventListener('mouseup', this.activeMouseUpListener);
-			document.removeEventListener('mousemove', this.activeMouseMoveListener);
-			element.removeEventListener('mousedown', this.activeMouseDownListener);
+			setTimeout(() => {
+				document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+				document.body.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+				el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+				el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+				requestAnimationFrame(removeDragOverlay);
+			}, 0);
 		};
 
-		this.activeMouseDownListener = (mouseEvent: Event) => {
-			const mEvent = mouseEvent as MouseEvent;
-			mEvent.preventDefault();
+		const mouseMoveHandler = (event: MouseEvent) => {
+			event.preventDefault();
+			event.stopPropagation();
+			if (!dragElement) return;
 
-			document.addEventListener('mouseup', this.activeMouseUpListener);
-			document.addEventListener('mousemove', this.activeMouseMoveListener);
+			currentPosition.x = event.clientX - initialPosition.x;
+			currentPosition.y = event.clientY - initialPosition.y;
 
-			initialPosition.x = mEvent.clientX - offsetPosition.x;
-			initialPosition.y = mEvent.clientY - offsetPosition.y;
+			const rawX = currentPosition.x + offsetPosition.x;
+			const rawY = currentPosition.y + offsetPosition.y;
 
-			const container = element.parentElement?.parentElement;
+			const container = dragElement.closest('.content-with-hotspots--container') as HTMLElement | null;
 			if (container) {
-				offsetPosition.x = element.getBoundingClientRect().left - container.getBoundingClientRect().left;
-				offsetPosition.y = element.getBoundingClientRect().top - container.getBoundingClientRect().top;
+				lastClampedPosition.x = Math.max(0, Math.min(rawX, container.offsetWidth - dragElement.offsetWidth));
+				lastClampedPosition.y = Math.max(0, Math.min(rawY, container.offsetHeight - dragElement.offsetHeight));
+			} else {
+				lastClampedPosition.x = rawX;
+				lastClampedPosition.y = rawY;
 			}
+
+			this._moveElement(dragElement, lastClampedPosition.x, lastClampedPosition.y, 'px');
 		};
 
-		this.activeMouseMoveListener = (mouseEvent: Event) => {
-			const mEvent = mouseEvent as MouseEvent;
+		this.containerMousedownHandler = (event: Event) => {
+			if (!this.editable) return;
+
+			const mEvent = event as MouseEvent;
+			if (!mEvent.isTrusted) return;
+			const hotspot = (mEvent.target as HTMLElement).closest('[data-hotspot-id]') as HTMLElement | null;
+			if (!hotspot) return;
+			if (mEvent.button !== 0) {
+				return;
+			}
+
+			hotspot.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+			hotspot.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+
 			mEvent.preventDefault();
-			mEvent.stopPropagation();
 
-			currentPosition.x = mEvent.clientX - initialPosition.x;
-			currentPosition.y = mEvent.clientY - initialPosition.y;
+			dragElement = hotspot;
+			currentPosition.x = 0;
+			currentPosition.y = 0;
 
-			this._moveElement(element, currentPosition.x + offsetPosition.x, currentPosition.y + offsetPosition.y, 'px');
+			// Prevent quickbar flickering
+			if (!document.getElementById('neos-hotspot-drag-overlay')) {
+				const overlay = document.createElement('style');
+				overlay.id = 'neos-hotspot-drag-overlay';
+				overlay.textContent = '[data-__neos__inline-ui] { visibility: hidden !important; }';
+				document.head.appendChild(overlay);
+			}
+
+			document.addEventListener('mouseup', mouseUpHandler, true);
+			document.addEventListener('mousemove', mouseMoveHandler);
+
+			this.cancelActiveDrag = () => {
+				endDrag();
+				removeDragOverlay();
+				dragElement = null;
+			};
+
+			const container = hotspot.closest('.content-with-hotspots--container') as HTMLElement | null;
+			if (container) {
+				offsetPosition.x = hotspot.getBoundingClientRect().left - container.getBoundingClientRect().left;
+				offsetPosition.y = hotspot.getBoundingClientRect().top - container.getBoundingClientRect().top;
+				lastClampedPosition.x = offsetPosition.x;
+				lastClampedPosition.y = offsetPosition.y;
+			}
+
+			initialPosition = {
+				x: mEvent.clientX,
+				y: mEvent.clientY,
+			};
 		};
 
-		element.addEventListener('mousedown', this.activeMouseDownListener);
-	}
-
-	private _detachDragListeners(): void {
-		document.removeEventListener('mouseup', this.activeMouseUpListener);
-		document.removeEventListener('mousemove', this.activeMouseMoveListener);
-		if (this.selectedElement) {
-			this.selectedElement.removeEventListener('mousedown', this.activeMouseDownListener);
-			this.selectedElement.removeEventListener('mouseup', this.activeMouseUpListener);
-			this.selectedElement.removeEventListener('mousemove', this.activeMouseMoveListener);
-		}
+		this.domSection.addEventListener('mousedown', this.containerMousedownHandler);
 	}
 
 	private _dispatchHotspotDraggedEvent(position: IVector2D, parentElement?: HTMLElement) {
 		if (parentElement) {
-			position.x = (position.x / parentElement.offsetWidth) * 100;
-			position.y = (position.y / parentElement.offsetHeight) * 100;
+			position.x = Math.round((position.x / parentElement.offsetWidth) * 100000) / 1000;
+			position.y = Math.round((position.y / parentElement.offsetHeight) * 100000) / 1000;
 		}
 
-		const dragEvent: CustomEvent = new CustomEvent(
+		const dragEvent = new CustomEvent(
 			'fd-hotspot-editor:hotspotDragged',
 			{
 				detail: {
@@ -216,9 +258,7 @@ export default class Hotspots {
 		window.parent.dispatchEvent(dragEvent);
 	}
 
-	private _moveElement(element: HTMLElement, x?: number, y?: number, unit?: 'px' | '%') {
-		unit = unit || '%';
-
+	private _moveElement(element: HTMLElement, x?: number, y?: number, unit: 'px' | '%' = '%') {
 		if (x !== undefined) {
 			element.style.left = String(x) + unit;
 		}

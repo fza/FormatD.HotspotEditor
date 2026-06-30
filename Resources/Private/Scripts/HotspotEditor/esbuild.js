@@ -11,11 +11,12 @@ const options = {
 	loader: { ".js": "jsx", ".ts": "tsx", ".tsx": "tsx" },
 	outdir: "../../../Public/HotspotEditor",
 	alias: extensibilityMap,
-	jsx: "transform"
+	jsx: "transform",
+	minify: process.env.NODE_ENV === 'production'
 };
 
 if (isWatch) {
-	esbuild.context(options).then((ctx) => ctx.watch());
+	esbuild.context({ ...options, sourcemap: true }).then((ctx) => ctx.watch());
 } else {
 	esbuild.build(options);
 }

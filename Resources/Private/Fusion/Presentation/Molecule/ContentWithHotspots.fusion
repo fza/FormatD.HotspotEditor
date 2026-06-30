@@ -16,13 +16,16 @@ prototype(FormatD.HotspotEditor:Molecule.ContentWithHotspots) < prototype(Neos.F
         @strict = true
         content = ${PropTypes.string}
         hotspots = ${PropTypes.string}
+        hotspotNodeTypes = ${PropTypes.any}
     }
 
     content = ''
     hotspots = ''
+    hotspotNodeTypes = ${[]}
 
     renderer = afx`
         <div class.contentWithHotspots="content-with-hotspots"
+             data-hotspot-node-types={renderingMode.isEdit ? Array.join(props.hotspotNodeTypes, ',') : null}
              @key="contentWithHotspots"
         >
             {props.content}

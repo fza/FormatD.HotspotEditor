@@ -8,6 +8,7 @@ export default class HotspotEditor extends PureComponent {
         value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
         identifier: PropTypes.string,
         commit: PropTypes.func.isRequired,
+        applyInspector: PropTypes.func.isRequired,
     };
 
     componentDidMount() {
@@ -38,11 +39,7 @@ export default class HotspotEditor extends PureComponent {
             return;
         }
         this.props.commit(pos[this.props.identifier]);
-
-        // @todo: temporary hack until problem with apply button is solved
-        setTimeout(() => {
-            document.getElementById('neos-Inspector-Apply')?.click();
-        }, 400);
+        this.props.applyInspector();
     };
 
     render() {

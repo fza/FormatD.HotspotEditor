@@ -44,7 +44,7 @@ prototype(FormatD.HotspotEditor:Atom.Hotspot) < prototype(Neos.Fusion:Component)
 				tagName={props.inBackend || !props.uri ? 'button' : 'a'}
 				attributes.class.hotspot="hotspot"
 				attributes.style={props.styleCoordinates}
-				attributes.href={props.uri ? props.uri : null}
+				attributes.href={!props.inBackend && props.uri ? props.uri : null}
 				attributes.type={!props.uri ? 'button' : null}
 				attributes.aria-controls={!props.uri ? props.identifier : null}
 				attributes.aria-label={props.hoverTitle ? props.hoverTitle : 'Hotspot'}
